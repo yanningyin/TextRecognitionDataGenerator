@@ -34,14 +34,14 @@ def load_fonts(lang: str) -> List[str]:
             os.path.join(os.path.dirname(__file__), "fonts/{}".format(lang), font)
             for font in os.listdir(
                 os.path.join(os.path.dirname(__file__), "fonts/{}".format(lang))
-            )
+            ) if font.endswith(".ttf")
         ]
     else:
         return [
             os.path.join(os.path.dirname(__file__), "fonts/latin", font)
             for font in os.listdir(
                 os.path.join(os.path.dirname(__file__), "fonts/latin")
-            )
+            ) if font.endswith(".ttf")
         ]
 
 
@@ -146,4 +146,4 @@ def get_text_height(image_font: ImageFont, text: str) -> int:
     Get the height of a string when rendered with a given font
     """
     left, top, right, bottom = image_font.getbbox(text)
-    return bottom
+    return bottom - top

@@ -1,7 +1,7 @@
 import os
 import random as rnd
 
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageStat, ImageDraw
 
 from trdg import computer_text_generator, background_generator, distorsion_generator
 from trdg.utils import mask_to_bboxes, make_filename_valid
@@ -54,9 +54,11 @@ class FakeTextDataGenerator(object):
         stroke_fill: str = "#282828",
         image_mode: str = "RGB",
         output_bboxes: int = 0,
+        word_shown_part: str = 'whole',
     ) -> Image:
         image = None
-
+        # print('------------------')
+        # print('index: {}, text: {}'.format(index, text))
         margin_top, margin_left, margin_bottom, margin_right = margins
         horizontal_margin = margin_left + margin_right
         vertical_margin = margin_top + margin_bottom
@@ -82,6 +84,39 @@ class FakeTextDataGenerator(object):
                 stroke_width,
                 stroke_fill,
             )
+
+
+        if word_shown_part == 'random':
+            word_shown_part = rnd.choice(['whole', 'upper', 'lower'])
+
+        if word_shown_part != 'whole':
+            if orientation == 1:
+                raise ValueError("Vertical text is temperarily incompatible with showing part of the word")
+            if fit:
+                raise ValueError("Fit is temperarily incompatible with showing part of the word")
+            
+            def show_half(img: Image.Image, half: str = "upper", bg_color=(255, 255, 255, 0)) -> Image.Image:
+                draw = ImageDraw.Draw(img)
+                width, height = img.size
+                if half == "upper":
+                    draw.rectangle([0, height // 2, width, height], fill=bg_color)
+                elif half == "lower":
+                    draw.rectangle([0, 0, width, height // 2], fill=bg_color)
+                return img
+
+            image = show_half(image, half=word_shown_part, bg_color=(255, 255, 255, 0))  # RGBA white
+            mask = show_half(mask, half=word_shown_part, bg_color=(0, 0, 0))         # or black for mask
+
+            # if word_shown_part != 'whole':
+            #     if word_shown_part == 'upper':
+            #         image = image.crop((0, 0, image.size[0], image.size[1] / 2))
+            #         mask = mask.crop((0, 0, mask.size[0], mask.size[1] / 2))
+            #     elif word_shown_part == 'lower':
+            #         image = image.crop((0, image.size[1] / 2, image.size[0], image.size[1]))
+            #         mask = mask.crop((0, mask.size[1] / 2, mask.size[0], mask.size[1]))
+
+        # print("Image size: {}".format(image.size))
+
         random_angle = rnd.randint(0 - skewing_angle, skewing_angle)
 
         rotated_img = image.rotate(
@@ -119,7 +154,7 @@ class FakeTextDataGenerator(object):
                 vertical=(distorsion_orientation == 0 or distorsion_orientation == 2),
                 horizontal=(distorsion_orientation == 1 or distorsion_orientation == 2),
             )
-
+        # print("Distorted image size: {}".format(distorted_img.size))
         ##################################
         # Resize image to desired format #
         ##################################
@@ -154,7 +189,7 @@ class FakeTextDataGenerator(object):
             background_height = new_height + vertical_margin
         else:
             raise ValueError("Invalid orientation")
-
+        # print("Resized image size: {}".format(resized_img.size))
         #############################
         # Generate background image #
         #############################
@@ -181,23 +216,26 @@ class FakeTextDataGenerator(object):
         ##############################################################
         # Comparing average pixel value of text and background image #
         ##############################################################
-        try:
-            resized_img_st = ImageStat.Stat(resized_img, resized_mask.split()[2])
-            background_img_st = ImageStat.Stat(background_img)
+        if output_mask == 1:
+            try:
+                resized_img_st = ImageStat.Stat(resized_img, resized_mask.split()[2])
+                background_img_st = ImageStat.Stat(background_img)
 
-            resized_img_px_mean = sum(resized_img_st.mean[:2]) / 3
-            background_img_px_mean = sum(background_img_st.mean) / 3
+                resized_img_px_mean = sum(resized_img_st.mean[:2]) / 3
+                background_img_px_mean = sum(background_img_st.mean) / 3
 
-            if abs(resized_img_px_mean - background_img_px_mean) < 15:
-                print("value of mean pixel is too similar. Ignore this image")
+                if abs(resized_img_px_mean - background_img_px_mean) < 15:
+                    print("value of mean pixel is too similar. Ignore this image")
 
-                print("resized_img_st \n {}".format(resized_img_st.mean))
-                print("background_img_st \n {}".format(background_img_st.mean))
+                    print("resized_img_st \n {}".format(resized_img_st.mean))
+                    print("background_img_st \n {}".format(background_img_st.mean))
 
+                    return
+            except Exception as err:
+                print("Error in comparing average pixel value of text and background image")
+                print(err)
                 return
-        except Exception as err:
-            return
-
+        
         #############################
         # Place text with alignment #
         #############################
@@ -227,7 +265,7 @@ class FakeTextDataGenerator(object):
                 resized_mask,
                 (background_width - new_text_width - margin_right, margin_top),
             )
-
+        # print("Background image size: {}".format(background_img.size))
         ############################################
         # Change image mode (RGB, grayscale, etc.) #
         ############################################
@@ -266,6 +304,8 @@ class FakeTextDataGenerator(object):
         mask_name = "{}_mask.png".format(name)
         box_name = "{}_boxes.txt".format(name)
         tess_box_name = "{}.box".format(name)
+
+        # print("Generated image: {}".format(image_name))
 
         # Save the image
         if out_dir is not None:

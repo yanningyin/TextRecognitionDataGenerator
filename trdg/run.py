@@ -341,6 +341,22 @@ def parse_arguments():
         help="Define the image mode to be used. RGB is default, L means 8-bit grayscale images, 1 means 1-bit binary images stored with one pixel per byte, etc.",
         default="RGB",
     )
+    parser.add_argument(
+        "-wsp",
+        "--word_shown_part",
+        type=str,
+        nargs="?",
+        help="Define the part of the word to be shown. Options: whole, random, upper, lower. Default: whole",
+        default="whole",
+    )
+    parser.add_argument(
+        "-sl",
+        "--strict_language",
+        action="store_true",
+        help="If set, only keep characters that belong to the specified language.",
+        default=False,
+    )
+
     return parser.parse_args()
 
 
@@ -432,6 +448,31 @@ def main():
     if args.case == "lower":
         strings = [x.lower() for x in strings]
 
+    # if args.strict_language:
+    #     # Remove characters that are not in the language dictionary
+    #     strings = [
+    #         "".join([c for c in s if c in lang_dict]) for s in strings
+    #     ]
+    # # Remove empty strings
+    # strings = [s for s in strings if len(s) > 0]
+
+    if args.strict_language:
+        import re
+        def filter_by_language(text, lang):
+            if lang == "cn":
+                return ''.join(re.findall(r'[\u4e00-\u9fff]', text))  # Chinese only
+            elif lang == "en":
+                return ''.join(re.findall(r'[A-Za-z0-9]', text))  # English letters only
+            elif lang == "de":
+                return ''.join(re.findall(r'[A-Za-zäöüÄÖÜß0-9]', text))  # German letters
+            elif lang == "ja":
+                return ''.join(re.findall(r'[\u3040-\u30ff\u4e00-\u9fff]', text))  # Hiragana/Katakana/Kanji
+            # Add more language filters here if needed
+            return text  # Default: no filtering
+
+        strings = [filter_by_language(s, args.language) for s in strings]
+        strings = [s for s in strings if len(s) > 0]
+
     string_count = len(strings)
 
     p = Pool(args.thread_count)
@@ -469,6 +510,7 @@ def main():
                 [args.stroke_fill] * string_count,
                 [args.image_mode] * string_count,
                 [args.output_bboxes] * string_count,
+                [args.word_shown_part] * string_count,
             ),
         ),
         total=args.count,
@@ -486,8 +528,50 @@ def main():
                 label = strings[i]
                 if args.space_width == 0:
                     label = label.replace(" ", "")
-                f.write("{} {}\n".format(file_name, label))
+                if os.path.isfile(os.path.join(args.output_dir, file_name)):
+                    f.write("{},{}\n".format(file_name, label))
+        
+        import pandas as pd
+        # Read the file into a DataFrame
+        label_df = pd.read_csv(os.path.join(args.output_dir, "labels.txt"), 
+                               sep=",", header=None, names=["filename", "label"])
 
+        # Shuffle the DataFrame
+        label_df = label_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+        # Split into train (80%), validation (10%), and test (10%)
+        n_total = len(label_df)
+        n_train = int(0.8 * n_total)
+        n_val = int(0.1 * n_total)
+
+        train_df = label_df[:n_train]
+        val_df = label_df[n_train:n_train + n_val]
+        test_df = label_df[n_train + n_val:]
+
+        # Save each split to a new file
+        train_path = os.path.join(args.output_dir, "labels_train.txt")
+        val_path = os.path.join(args.output_dir, "labels_val.txt")
+        test_path = os.path.join(args.output_dir, "labels_test.txt")
+
+        train_df.to_csv(train_path, sep=",", index=False, header=False)
+        val_df.to_csv(val_path, sep=",", index=False, header=False)
+        test_df.to_csv(test_path, sep=",", index=False, header=False)
+
+        print(f"Train, validation, and test splits saved to {args.output_dir} as labels_train.txt, labels_val.txt, and labels_test.txt respectively.")
+
+        import shutil
+        def move_images_to_folder(source_dir, extension):
+            target_dir = os.path.join(source_dir, "images")
+            os.makedirs(target_dir, exist_ok=True)
+
+            for filename in os.listdir(source_dir):
+                if filename.endswith(extension):
+                    source_path = os.path.join(source_dir, filename)
+                    target_path = os.path.join(target_dir, filename)
+                    shutil.move(source_path, target_path)
+                    # print(f"Moved: {filename}")
+        move_images_to_folder(args.output_dir, args.extension)
+        
 
 if __name__ == "__main__":
     main()

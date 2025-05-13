@@ -45,6 +45,7 @@ class GeneratorFromStrings:
         image_mode: str = "RGB",
         output_bboxes: int = 0,
         rtl: bool = False,
+        word_shown_part: str = "upper", # Options: "whole", "random", "upper", "lower"
     ):
         self.count = count
         self.strings = strings
@@ -89,6 +90,7 @@ class GeneratorFromStrings:
         self.stroke_width = stroke_width
         self.stroke_fill = stroke_fill
         self.image_mode = image_mode
+        self.word_shown_part = word_shown_part
 
     def __iter__(self):
         return self
@@ -132,6 +134,7 @@ class GeneratorFromStrings:
                 self.stroke_fill,
                 self.image_mode,
                 self.output_bboxes,
+                self.word_shown_part,
             ),
             self.orig_strings[(self.generated_count - 1) % len(self.orig_strings)]
             if self.rtl

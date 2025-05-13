@@ -1,7 +1,7 @@
 import random as rnd
 from typing import Tuple
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
-
+import re
 from trdg.utils import get_text_width, get_text_height
 
 # Thai Unicode reference: https://jrgraphix.net/r/Unicode/0E00-0E7F
@@ -104,7 +104,35 @@ def _generate_horizontal_text(
     if not word_split:
         text_width += character_spacing * (len(text) - 1)
 
-    text_height = max([get_text_height(image_font, p) for p in splitted_text])
+    # text_height = max([get_text_height(image_font, p) for p in splitted_text])
+
+    txt_bbox = image_font.getbbox(splitted_text) # (left, top, right, bottom)
+    text_height = txt_bbox[3] - txt_bbox[1]
+    if bool(re.search(r'[A-Za-z]', splitted_text)):
+        # print('The text contains letters:', splitted_text)
+        full_bbox = image_font.getbbox("b|q")
+        txt_bbox = (
+            min(txt_bbox[0], full_bbox[0]),
+            min(txt_bbox[1], full_bbox[1]),
+            max(txt_bbox[2], full_bbox[2]),
+            max(txt_bbox[3], full_bbox[3]),
+        )
+        # text_height = max([get_text_height(image_font, "b|q"), text_height])
+        text_height = max(txt_bbox[3] - txt_bbox[1], text_height)
+
+    # print('txt_bbox:', txt_bbox)
+
+    if bool(re.search(r'[\u4e00-\u9fff]', splitted_text)):
+        # Chinese characters
+        full_bbox = image_font.getbbox("重")
+        txt_bbox = (
+            min(txt_bbox[0], full_bbox[0]),
+            min(txt_bbox[1], full_bbox[1]),
+            max(txt_bbox[2], full_bbox[2]),
+            max(txt_bbox[3], full_bbox[3]),
+        )
+        # text_height = max([get_text_height(image_font, "b|q"), text_height])
+        text_height = max(txt_bbox[3] - txt_bbox[1], text_height)
 
     txt_img = Image.new("RGBA", (text_width, text_height), (0, 0, 0, 0))
     txt_mask = Image.new("RGB", (text_width, text_height), (0, 0, 0))
@@ -133,7 +161,7 @@ def _generate_horizontal_text(
 
     for i, p in enumerate(splitted_text):
         txt_img_draw.text(
-            (sum(piece_widths[0:i]) + i * character_spacing * int(not word_split), 0),
+            (sum(piece_widths[0:i]) + i * character_spacing * int(not word_split), -txt_bbox[1]),
             p,
             fill=fill,
             font=image_font,
@@ -141,7 +169,7 @@ def _generate_horizontal_text(
             stroke_fill=stroke_fill,
         )
         txt_mask_draw.text(
-            (sum(piece_widths[0:i]) + i * character_spacing * int(not word_split), 0),
+            (sum(piece_widths[0:i]) + i * character_spacing * int(not word_split), -txt_bbox[1]),
             p,
             fill=((i + 1) // (255 * 255), (i + 1) // 255, (i + 1) % 255),
             font=image_font,
